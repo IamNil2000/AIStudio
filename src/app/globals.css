@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* PartForge Design System CSS Variables */
+:root {
+  --bg-app: #f7f7f8;
+  --bg-panel: #ffffff;
+  --bg-canvas: #f0f0f2;
+  --border: #e2e2e6;
+  --text-primary: #1a1a1c;
+  --text-secondary: #6b6b70;
+  --accent: #3b82f6;
+  --grid-dot: #d4d4d8;
+  --selection: #3b82f6;
+  --hover: #93c5fd;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--bg-app);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--grid-dot);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* Selection color */
+::selection {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+/* Smooth transitions for interactive elements */
+a,
+button,
+input,
+select,
+textarea {
+  transition: all 0.15s ease;
+}
+
+/* KBD element styling */
+kbd {
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* Prevent text selection on UI elements */
+.sidebar,
+.toolbar {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Canvas container fills available space */
+.canvas-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* Utility - truncate text */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Loading spinner animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Fade in animation for panels */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.panel-enter {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Hover card effect */
+.hover-card {
+  transition: all 0.2s ease;
+}
+
+.hover-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
