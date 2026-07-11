@@ -128,29 +128,102 @@ export function nudgeMatrix(
 }
 
 /**
- * Free translate in screen/camera plane.
+ * Free translate in screen/camera plane with camera-distance-aware sensitivity.
  * Maps 2D mouse delta to 3D movement in the camera plane.
+ * The sensitivity scales with camera distance so parts at any depth feel consistent.
+ *
+ * @param matrix - The matrix to translate
+ * @param deltaX - Horizontal mouse delta in pixels
+ * @param deltaY - Vertical mouse delta in pixels
+ * @param camera - The camera used for view orientation
+ * @param sensitivity - Base sensitivity factor (default 0.015)
+ * @param cameraDistance - Distance from camera to object. If provided, sensitivity
+ *   is adjusted proportionally so parts further from camera move faster per pixel.
  */
 export function freeTranslate(
   matrix: THREE.Matrix4,
   deltaX: number,
   deltaY: number,
   camera: THREE.Camera,
-  sensitivity = 0.01
+  sensitivity = 0.015,
+  cameraDistance?: number
 ): THREE.Matrix4 {
   const { position, quaternion, scale } = decomposeMatrix(matrix);
 
-  // Get camera right and up vectors
+  // Camera-distance-aware sensitivity adjustment
+  // Objects further from camera need larger movement to feel consistent on screen.
+  // Base calibration: at distance 10, sensitivity = provided value.
+  let adjustedSensitivity = sensitivity;
+  if (cameraDistance !== undefined && cameraDistance > 0.1) {
+    adjustedSensitivity = sensitivity * (cameraDistance / 10);
+  }
+
+  // Get camera right and up vectors (in world space)
   const right = new THREE.Vector3();
   const up = new THREE.Vector3();
-  camera.getWorldDirection(right); // actually forward
-  right.cross(camera.up).normalize(); // right = forward × up
-  up.copy(camera.up);
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  right.crossVectors(forward, camera.up).normalize();
+  up.copy(camera.up).normalize();
 
   // Move in camera plane
-  position.add(right.multiplyScalar(deltaX * sensitivity));
-  position.add(up.multiplyScalar(-deltaY * sensitivity));
+  position.add(right.multiplyScalar(deltaX * adjustedSensitivity));
+  position.add(up.multiplyScalar(-deltaY * adjustedSensitivity));
 
+  return composeMatrix(position, quaternion, scale);
+}
+
+/**
+ * Rotate a part naturally by mapping 2D mouse movement to 3D rotation.
+ *
+ * This uses a "turntable" style rotation:
+ * - Horizontal drag  → rotates around world Y axis (spins horizontally)
+ * - Vertical drag    → tilts toward/away from the viewer using the camera's
+ *                      local right axis as the rotation axis
+ * - Diagonal drag    → combines both naturally
+ *
+ * This feels intuitive because it mirrors how you'd naturally manipulate
+ * an object in space — left/right spins it, up/down tilts it.
+ *
+ * @param matrix - The matrix to rotate
+ * @param deltaX - Horizontal mouse delta in pixels
+ * @param deltaY - Vertical mouse delta in pixels
+ * @param camera - The camera for view orientation
+ * @param sensitivity - Rotation sensitivity (default 0.006)
+ */
+export function rotateFree(
+  matrix: THREE.Matrix4,
+  deltaX: number,
+  deltaY: number,
+  camera: THREE.Camera,
+  sensitivity = 0.006
+): THREE.Matrix4 {
+  const { position, quaternion, scale } = decomposeMatrix(matrix);
+
+  // --- Horizontal rotation: spin around world Y axis ---
+  if (Math.abs(deltaX) > 0.5) {
+    const qY = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      deltaX * sensitivity
+    );
+    quaternion.premultiply(qY);
+  }
+
+  // --- Vertical rotation: tilt around camera's right axis ---
+  if (Math.abs(deltaY) > 0.5) {
+    const right = new THREE.Vector3();
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    right.crossVectors(forward, camera.up).normalize();
+
+    const qX = new THREE.Quaternion().setFromAxisAngle(
+      right,
+      -deltaY * sensitivity
+    );
+    quaternion.premultiply(qX);
+  }
+
+  quaternion.normalize();
   return composeMatrix(position, quaternion, scale);
 }
 

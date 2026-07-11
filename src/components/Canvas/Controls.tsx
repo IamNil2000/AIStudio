@@ -8,6 +8,7 @@ import type { Part, ControlsHandle } from '@/types';
 import {
   translateAlongAxis,
   rotateAroundAxis,
+  rotateFree,
   freeTranslate,
   scaleMatrix,
   nudgeMatrix,
@@ -246,6 +247,33 @@ export function PartControls({ controlsRef }: PartControlsProps) {
       historyPushedRef.current = false;
     };
 
+    // Pre-allocated temp objects for getCameraDistance to avoid GC on every mousemove
+    const _camPos = new THREE.Vector3();
+    const _partPos = new THREE.Vector3();
+    const _partQuat = new THREE.Quaternion();
+    const _partScale = new THREE.Vector3();
+
+    /**
+     * Compute average camera distance to all selected parts.
+     * Used to adjust translation/rotation sensitivity so interactions
+     * feel consistent regardless of how far the parts are from the camera.
+     */
+    function getCameraDistance(): number {
+      camera.getWorldPosition(_camPos);
+      const state = usePartStore.getState();
+      let totalDist = 0;
+      let count = 0;
+      for (const id of state.selectedIds) {
+        const part = state.parts[id];
+        if (part) {
+          part.currentMatrix.decompose(_partPos, _partQuat, _partScale);
+          totalDist += _camPos.distanceTo(_partPos);
+          count++;
+        }
+      }
+      return count > 0 ? totalDist / count : 10;
+    }
+
     const onMouseMove = (e: MouseEvent) => {
       if (!isDragging.current || usePartStore.getState().selectedIds.length === 0) return;
 
@@ -255,16 +283,20 @@ export function PartControls({ controlsRef }: PartControlsProps) {
 
       const state = usePartStore.getState();
       const currentTransformSpace = state.transformSpace;
+      const camDistance = getCameraDistance();
 
       if (ctrlKey.current && shiftKey.current) {
-        const scaleFactor = 1 + dy * 0.01;
+        // --- Ctrl+Shift+drag: Scale ---
+        const scaleFactor = 1 + dy * 0.008;
         const axis = activeAxis.current as 'x' | 'y' | 'z' | null;
         transformSelected((matrix) =>
           scaleMatrix(matrix, axis || 'uniform', scaleFactor)
         );
       } else if (ctrlKey.current) {
+        // --- Ctrl+drag: Rotation ---
         if (activeAxis.current) {
-          const angle = dx * 0.01;
+          // Axis-constrained rotation with distance-aware sensitivity
+          const angle = dx * 0.008 * (camDistance / 10);
           transformSelected((matrix) =>
             rotateAroundAxis(
               matrix,
@@ -274,20 +306,22 @@ export function PartControls({ controlsRef }: PartControlsProps) {
             )
           );
         } else {
-          transformSelected((matrix) => {
-            let m = rotateAroundAxis(matrix, 'y', dx * 0.01, 'world');
-            m = rotateAroundAxis(m, 'x', dy * 0.01, 'world');
-            return m;
-          });
+          // Free rotation using natural turntable-style mapping
+          const sensitivity = 0.006 * (camDistance / 10);
+          transformSelected((matrix) =>
+            rotateFree(matrix, dx, dy, camera, sensitivity)
+          );
         }
       } else if (shiftKey.current) {
+        // --- Shift+drag: Free translate in camera plane ---
         if (camera) {
           transformSelected((matrix) =>
-            freeTranslate(matrix, dx, dy, camera, 0.02)
+            freeTranslate(matrix, dx, dy, camera, 0.015, camDistance)
           );
         }
       } else if (activeAxis.current) {
-        const delta = (dx + dy) * 0.02;
+        // --- Axis-constrained translate ---
+        const delta = (dx + dy) * 0.02 * (camDistance / 10);
         transformSelected((matrix) =>
           translateAlongAxis(
             matrix,
