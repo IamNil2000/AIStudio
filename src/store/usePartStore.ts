@@ -65,9 +65,23 @@ export const usePartStore = create<AppState>((set, get) => ({
   sceneRef: null,
   modelScene: null,
 
+  // Animation
+  animations: [] as THREE.AnimationClip[],
+  animationPlaying: false,
+  animationMixer: null as THREE.AnimationMixer | null,
+
   setSceneRef: (scene: THREE.Scene) => set({ sceneRef: scene }),
 
   setModelScene: (scene: THREE.Group | null) => set({ modelScene: scene }),
+
+  setAnimations: (clips: THREE.AnimationClip[]) => set({ animations: clips }),
+
+  toggleAnimation: () => {
+    const state = get();
+    set({ animationPlaying: !state.animationPlaying });
+  },
+
+  setAnimationPlaying: (playing: boolean) => set({ animationPlaying: playing }),
 
   setModelLoading: (loading: boolean, progress = 0) => set({
     modelLoading: loading,

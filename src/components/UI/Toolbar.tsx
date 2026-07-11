@@ -10,6 +10,8 @@ import {
   Ruler,
   Expand,
   Shrink,
+  Play,
+  Square,
 } from 'lucide-react';
 import { usePartStore } from '@/store/usePartStore';
 
@@ -27,6 +29,9 @@ export function Toolbar() {
   const explodeTarget = usePartStore((s) => s.explodeTarget);
   const toggleExplode = usePartStore((s) => s.toggleExplode);
   const setExplodeTarget = usePartStore((s) => s.setExplodeTarget);
+  const animationPlaying = usePartStore((s) => s.animationPlaying);
+  const toggleAnimation = usePartStore((s) => s.toggleAnimation);
+  const hasAnimations = usePartStore((s) => s.animations.length > 0);
 
   const spaceLabels: Record<string, string> = {
     local: 'Local',
@@ -133,6 +138,22 @@ export function Toolbar() {
               <RotateCcw size={12} />
               Reset All
             </button>
+
+            {/* Animation play/stop button */}
+            {hasAnimations && (
+              <button
+                onClick={toggleAnimation}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded text-xs transition-colors border ${
+                  animationPlaying
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : 'text-[#6b6b70] hover:bg-[#f0f0f2] border-[#e2e2e6]'
+                }`}
+                title={animationPlaying ? 'Stop animation' : 'Play animation'}
+              >
+                {animationPlaying ? <Square size={12} /> : <Play size={12} />}
+                {animationPlaying ? 'Stop' : 'Play'}
+              </button>
+            )}
           </>
         )}
 

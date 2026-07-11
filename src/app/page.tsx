@@ -19,19 +19,24 @@ export default function Home() {
   const loadModel = usePartStore((s) => s.loadModel);
 
   const setModelScene = usePartStore((s) => s.setModelScene);
+  const setAnimations = usePartStore((s) => s.setAnimations);
+  const setAnimationPlaying = usePartStore((s) => s.setAnimationPlaying);
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
-      const { scene, parts } = await loadModelFromFile(file);
+      const { scene, parts, animations } = await loadModelFromFile(file);
       setModelScene(scene);
       loadModel(parts, file.name);
+      setAnimations(animations);
+      // Reset animation state when loading a new model
+      setAnimationPlaying(false);
     } catch (err) {
       console.error('Failed to load model:', err);
     }
-  }, [loadModel, setModelScene]);
+  }, [loadModel, setModelScene, setAnimations, setAnimationPlaying]);
 
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#f7f7f8]">

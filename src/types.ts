@@ -74,9 +74,17 @@ export interface AppState {
   // Loaded model scene (for direct rendering)
   modelScene: THREE.Group | null;
   
+  // Animation
+  animations: THREE.AnimationClip[];
+  animationPlaying: boolean;
+  animationMixer: THREE.AnimationMixer | null;
+  
   // Actions
   setSceneRef: (scene: THREE.Scene) => void;
   setModelScene: (scene: THREE.Group | null) => void;
+  setAnimations: (clips: THREE.AnimationClip[]) => void;
+  toggleAnimation: () => void;
+  setAnimationPlaying: (playing: boolean) => void;
   loadModel: (parts: Part[], fileName: string) => void;
   setModelLoading: (loading: boolean, progress?: number) => void;
   selectPart: (id: string, multi?: boolean) => void;

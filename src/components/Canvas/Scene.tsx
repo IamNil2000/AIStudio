@@ -6,6 +6,7 @@ import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/dr
 import * as THREE from 'three';
 import { usePartStore } from '@/store/usePartStore';
 import { Model } from './Model';
+import { AnimationPlayer } from './AnimationPlayer';
 import { PartControls } from './Controls';
 import { MeasurementLines } from './MeasurementLines';
 import { ExplodeAnimator } from './ExplodeAnimator';
@@ -85,6 +86,9 @@ export function Scene() {
 
             {/* Renders each part individually with clickable selection */}
             <Model controlsRef={controlsRef} />
+
+            {/* GLTF animation player */}
+            <AnimationPlayer />
 
             {/* Keyboard and mouse controls for transforming selected parts */}
             <PartControls controlsRef={controlsRef} />

@@ -101,16 +101,17 @@ export function extractParts(object: THREE.Object3D, baseName = 'Model'): Part[]
 export function loadGLB(
   url: string,
   onProgress?: (progress: number) => void
-): Promise<{ scene: THREE.Group; parts: Part[] }> {
+): Promise<{ scene: THREE.Group; parts: Part[]; animations: THREE.AnimationClip[] }> {
   return new Promise((resolve, reject) => {
     const loader = new GLTFLoader();
     loader.load(
       url,
       (gltf) => {
-        const scene = gltf.scene;
+        const gltfResult = gltf as { scene: THREE.Group; animations: THREE.AnimationClip[] };
+        const scene = gltfResult.scene;
         scene.updateWorldMatrix(true, true);
         const parts = extractParts(scene, 'GLB');
-        resolve({ scene, parts });
+        resolve({ scene, parts, animations: gltfResult.animations || [] });
       },
       (xhr) => {
         if (onProgress && xhr.total > 0) {
@@ -128,7 +129,7 @@ export function loadGLB(
 export function loadSTL(
   url: string,
   onProgress?: (progress: number) => void
-): Promise<{ scene: THREE.Group; parts: Part[] }> {
+): Promise<{ scene: THREE.Group; parts: Part[]; animations: THREE.AnimationClip[] }> {
   return new Promise((resolve, reject) => {
     const loader = new STLLoader();
     loader.load(
@@ -155,7 +156,7 @@ export function loadSTL(
         group.add(mesh);
         
         const parts = extractParts(group, 'STL');
-        resolve({ scene: group, parts });
+        resolve({ scene: group, parts, animations: [] });
       },
       (xhr) => {
         if (onProgress && xhr.total > 0) {
@@ -174,7 +175,7 @@ export function loadOBJ(
   url: string,
   mtlUrl?: string,
   onProgress?: (progress: number) => void
-): Promise<{ scene: THREE.Group; parts: Part[] }> {
+): Promise<{ scene: THREE.Group; parts: Part[]; animations: THREE.AnimationClip[] }> {
   return new Promise((resolve, reject) => {
     const loader = new OBJLoader();
     
@@ -198,7 +199,7 @@ export function loadOBJ(
         });
         
         const parts = extractParts(object, 'OBJ');
-        resolve({ scene: object, parts });
+        resolve({ scene: object, parts, animations: [] });
       },
       (xhr) => {
         if (onProgress && xhr.total > 0) {
@@ -216,7 +217,7 @@ export function loadOBJ(
 export async function loadModelFromUrl(
   url: string,
   onProgress?: (progress: number) => void
-): Promise<{ scene: THREE.Group; parts: Part[] }> {
+): Promise<{ scene: THREE.Group; parts: Part[]; animations: THREE.AnimationClip[] }> {
   return loadGLB(url, onProgress);
 }
 
@@ -226,12 +227,12 @@ export async function loadModelFromUrl(
 export async function loadModelFromFile(
   file: File,
   onProgress?: (progress: number) => void
-): Promise<{ scene: THREE.Group; parts: Part[] }> {
+): Promise<{ scene: THREE.Group; parts: Part[]; animations: THREE.AnimationClip[] }> {
   const url = URL.createObjectURL(file);
   const ext = file.name.split('.').pop()?.toLowerCase() || '';
 
   try {
-    let result: { scene: THREE.Group; parts: Part[] };
+    let result: { scene: THREE.Group; parts: Part[]; animations: THREE.AnimationClip[] };
     
     switch (ext) {
       case 'glb':

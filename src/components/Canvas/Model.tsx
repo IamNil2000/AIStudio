@@ -5,6 +5,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { usePartStore } from '@/store/usePartStore';
 import { PartMesh } from './Part';
+import { AnimatedScene } from './AnimationPlayer';
 import type { ControlsHandle } from '@/types';
 
 interface ModelProps {
@@ -14,6 +15,8 @@ interface ModelProps {
 export function Model({ controlsRef }: ModelProps) {
   const parts = usePartStore((s) => s.parts);
   const modelLoaded = usePartStore((s) => s.modelLoaded);
+  const animationPlaying = usePartStore((s) => s.animationPlaying);
+  const hasAnimations = usePartStore((s) => s.animations.length > 0);
   const groupRef = useRef<THREE.Group>(null);
   const { camera: r3fCamera } = useThree();
 
@@ -114,6 +117,16 @@ export function Model({ controlsRef }: ModelProps) {
   }, [modelLoaded]);
 
   if (!modelLoaded || Object.keys(parts).length === 0) return null;
+
+  // When animation is playing and the model has animation data,
+  // render the original animated scene instead of individual parts
+  if (animationPlaying && hasAnimations) {
+    return (
+      <group ref={groupRef}>
+        <AnimatedScene />
+      </group>
+    );
+  }
 
   return (
     <group ref={groupRef}>

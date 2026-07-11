@@ -280,7 +280,7 @@ export function rotateArcball(
   matrix: THREE.Matrix4,
   prevNDC: { x: number; y: number },
   currNDC: { x: number; y: number },
-  sensitivity = 1.8
+  sensitivity = 4.0
 ): THREE.Matrix4 {
   const { position, quaternion, scale } = decomposeMatrix(matrix);
 
@@ -299,7 +299,9 @@ export function rotateArcball(
   const angle = Math.acos(dot);
   _arcballAxis.normalize();
 
-  // Apply sensitivity multiplier for responsive feel, negate for correct direction
+  // Apply sensitivity multiplier, negate angle for correct cursor direction
+  // Use premultiply (world space) so screen directions map to world axes:
+  // vertical drag → world X tilt, horizontal drag → world Y spin
   const rotQuat = new THREE.Quaternion().setFromAxisAngle(_arcballAxis, -angle * sensitivity);
   quaternion.premultiply(rotQuat);
   quaternion.normalize();

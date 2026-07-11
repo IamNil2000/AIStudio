@@ -377,7 +377,7 @@ export function PartControls({ controlsRef }: PartControlsProps) {
         // --- Ctrl+drag: Rotation ---
         if (activeAxis.current) {
           // Axis-constrained rotation with distance-aware sensitivity
-          const angle = dx * 0.015 * (camDistance / 10);
+          const angle = dx * 0.025 * (camDistance / 10);
           transformSelected((matrix) =>
             rotateAroundAxis(
               matrix,
@@ -397,9 +397,8 @@ export function PartControls({ controlsRef }: PartControlsProps) {
           };
 
           // Compute incremental arcball rotation from last frame's NDC
-          // Sensitivity 1.8x for responsive but controlled feel
           transformSelected((matrix) =>
-            rotateArcball(matrix, lastArcballNDC.current, currNDC, 1.8)
+            rotateArcball(matrix, lastArcballNDC.current, currNDC, 4.0)
           );
 
           // Store current NDC for next frame's delta
