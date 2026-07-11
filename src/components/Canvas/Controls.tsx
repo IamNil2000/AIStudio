@@ -8,8 +8,8 @@ import type { Part, ControlsHandle } from '@/types';
 import {
   translateAlongAxis,
   rotateAroundAxis,
-  rotateFree,
-  freeTranslate,
+  rotateArcball,
+  translateByWorldOffset,
   scaleMatrix,
   nudgeMatrix,
 } from '@/lib/transforms';
@@ -31,6 +31,14 @@ export function PartControls({ controlsRef }: PartControlsProps) {
   const altKey = useRef(false);
   const activeAxis = useRef<string | null>(null);
   const historyPushedRef = useRef(false);
+
+  // Shift+drag plane-projected translation state
+  const dragStartMouse = useRef({ x: 0, y: 0 });
+  const lastProjectedPoint = useRef(new THREE.Vector3());
+  const dragTranslationPlane = useRef(new THREE.Plane());
+
+  // Ctrl+drag arcball rotation state
+  const lastArcballNDC = useRef({ x: 0, y: 0 });
 
   // Track modifier keys
   useEffect(() => {
@@ -223,6 +231,32 @@ export function PartControls({ controlsRef }: PartControlsProps) {
   useEffect(() => {
     const canvas = gl.domElement;
 
+    // Pre-allocated temp objects for plane projection (avoids GC on every mousemove)
+    const _raycaster = new THREE.Raycaster();
+    const _ndcVec2 = new THREE.Vector2();
+
+    /**
+     * Project a screen-space mouse position onto a 3D plane and store the
+     * intersection point in the provided `out` vector.
+     * Used by Shift+drag for pixel-perfect cursor tracking.
+     */
+    function projectMouseToPlane(
+      clientX: number,
+      clientY: number,
+      cam: THREE.Camera,
+      canvasEl: HTMLCanvasElement,
+      plane: THREE.Plane,
+      out: THREE.Vector3
+    ): void {
+      const rect = canvasEl.getBoundingClientRect();
+      _ndcVec2.set(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+      _raycaster.setFromCamera(_ndcVec2, cam);
+      _raycaster.ray.intersectPlane(plane, out);
+    }
+
     const onMouseDown = (e: MouseEvent) => {
       // Only activate part manipulation on right-click (button === 2)
       // or when modifier keys are held (Ctrl, Shift, Alt).
@@ -245,7 +279,54 @@ export function PartControls({ controlsRef }: PartControlsProps) {
 
       isDragging.current = true;
       historyPushedRef.current = false;
+
+      if (shiftKey.current) {
+        // Capture drag start position and compute the 3D translation plane
+        // at the object's depth, perpendicular to camera view direction.
+        // This enables pixel-perfect cursor tracking via plane-projected raycasting.
+        dragStartMouse.current = { x: e.clientX, y: e.clientY };
+
+        const state = usePartStore.getState();
+        const avgPos = new THREE.Vector3();
+        let count = 0;
+        for (const id of state.selectedIds) {
+          const part = state.parts[id];
+          if (part) {
+            const pos = new THREE.Vector3();
+            part.currentMatrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+            avgPos.add(pos);
+            count++;
+          }
+        }
+        if (count > 0) avgPos.divideScalar(count);
+
+        const cameraDir = new THREE.Vector3();
+        camera.getWorldDirection(cameraDir);
+        dragTranslationPlane.current.setFromNormalAndCoplanarPoint(cameraDir, avgPos);
+
+        // Pre-compute the initial projected point so we can track incremental deltas
+        projectMouseToPlane(
+          e.clientX, e.clientY,
+          camera, canvas,
+          dragTranslationPlane.current,
+          lastProjectedPoint.current
+        );
+      }
+
+      if (ctrlKey.current && !shiftKey.current && !activeAxis.current) {
+        // For free rotation (no axis lock), capture the initial NDC position
+        // so the arcball can track incremental mouse deltas in normalized space.
+        const rect = canvas.getBoundingClientRect();
+        lastArcballNDC.current = {
+          x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          y: -((e.clientY - rect.top) / rect.height) * 2 + 1,
+        };
+      }
     };
+
+    // Pre-allocated temp objects for plane projection (avoids GC on every mousemove)
+    const _currentProjected = new THREE.Vector3();
+    const _worldDelta = new THREE.Vector3();
 
     // Pre-allocated temp objects for getCameraDistance to avoid GC on every mousemove
     const _camPos = new THREE.Vector3();
@@ -296,7 +377,7 @@ export function PartControls({ controlsRef }: PartControlsProps) {
         // --- Ctrl+drag: Rotation ---
         if (activeAxis.current) {
           // Axis-constrained rotation with distance-aware sensitivity
-          const angle = dx * 0.008 * (camDistance / 10);
+          const angle = dx * 0.015 * (camDistance / 10);
           transformSelected((matrix) =>
             rotateAroundAxis(
               matrix,
@@ -306,18 +387,46 @@ export function PartControls({ controlsRef }: PartControlsProps) {
             )
           );
         } else {
-          // Free rotation using natural turntable-style mapping
-          const sensitivity = 0.006 * (camDistance / 10);
+          // Free rotation using arcball (trackball) for pixel-perfect cursor tracking.
+          // Projects the mouse onto a virtual 3D sphere and computes the exact
+          // rotation from the previous position to the current position.
+          const rect = canvas.getBoundingClientRect();
+          const currNDC = {
+            x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
+            y: -((e.clientY - rect.top) / rect.height) * 2 + 1,
+          };
+
+          // Compute incremental arcball rotation from last frame's NDC
+          // Sensitivity 1.8x for responsive but controlled feel
           transformSelected((matrix) =>
-            rotateFree(matrix, dx, dy, camera, sensitivity)
+            rotateArcball(matrix, lastArcballNDC.current, currNDC, 1.8)
           );
+
+          // Store current NDC for next frame's delta
+          lastArcballNDC.current = currNDC;
         }
       } else if (shiftKey.current) {
-        // --- Shift+drag: Free translate in camera plane ---
+        // --- Shift+drag: Plane-projected translate (pixel-perfect cursor tracking) ---
         if (camera) {
-          transformSelected((matrix) =>
-            freeTranslate(matrix, dx, dy, camera, 0.015, camDistance)
+          projectMouseToPlane(
+            e.clientX, e.clientY,
+            camera, canvas,
+            dragTranslationPlane.current,
+            _currentProjected
           );
+
+          // Compute incremental world-space delta from last frame
+          _worldDelta
+            .copy(_currentProjected)
+            .sub(lastProjectedPoint.current);
+
+          // Skip sub-pixel deltas to avoid noise
+          if (_worldDelta.length() > 0.001) {
+            lastProjectedPoint.current.copy(_currentProjected);
+            transformSelected((matrix) =>
+              translateByWorldOffset(matrix, _worldDelta)
+            );
+          }
         }
       } else if (activeAxis.current) {
         // --- Axis-constrained translate ---

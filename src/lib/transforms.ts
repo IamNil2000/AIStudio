@@ -128,6 +128,22 @@ export function nudgeMatrix(
 }
 
 /**
+ * Apply a world-space translation offset to a matrix.
+ * Unlike freeTranslate (which approximates with pixel deltas),
+ * this takes a pre-computed world-space delta vector for
+ * pixel-perfect cursor tracking when combined with
+ * plane-projected raycasting (used by Shift+drag).
+ */
+export function translateByWorldOffset(
+  matrix: THREE.Matrix4,
+  offset: THREE.Vector3
+): THREE.Matrix4 {
+  const { position, quaternion, scale } = decomposeMatrix(matrix);
+  position.add(offset);
+  return composeMatrix(position, quaternion, scale);
+}
+
+/**
  * Free translate in screen/camera plane with camera-distance-aware sensitivity.
  * Maps 2D mouse delta to 3D movement in the camera plane.
  * The sensitivity scales with camera distance so parts at any depth feel consistent.
@@ -224,6 +240,70 @@ export function rotateFree(
   }
 
   quaternion.normalize();
+  return composeMatrix(position, quaternion, scale);
+}
+
+// Pre-allocated vectors for arcball rotation (avoids GC on every mousemove)
+const _arcballV1 = new THREE.Vector3();
+const _arcballV2 = new THREE.Vector3();
+const _arcballAxis = new THREE.Vector3();
+
+/**
+ * Project a 2D NDC coordinate onto a virtual trackball sphere.
+ * Positions inside the unit circle are mapped onto a hemisphere;
+ * positions outside are normalized to the sphere's rim.
+ */
+function projectOnSphere(x: number, y: number, out: THREE.Vector3): void {
+  const r2 = x * x + y * y;
+  out.set(x, y, 0);
+  if (r2 <= 1) {
+    out.z = Math.sqrt(1 - r2);
+  } else {
+    out.normalize();
+  }
+}
+
+/**
+ * Apply an arcball (trackball) rotation from one normalized device
+ * coordinate to another. Maps 2D mouse movement on a virtual sphere
+ * to a precise 3D rotation, giving pixel-perfect cursor tracking.
+ *
+ * Unlike rotateFree (which uses pixel deltas multiplied by a sensitivity
+ * factor), this uses the actual 3D positions on a virtual trackball
+ * sphere to compute the exact rotation axis and angle.
+ *
+ * @param matrix - The matrix to rotate
+ * @param prevNDC - Previous frame's NDC mouse position
+ * @param currNDC - Current frame's NDC mouse position
+ */
+export function rotateArcball(
+  matrix: THREE.Matrix4,
+  prevNDC: { x: number; y: number },
+  currNDC: { x: number; y: number },
+  sensitivity = 1.8
+): THREE.Matrix4 {
+  const { position, quaternion, scale } = decomposeMatrix(matrix);
+
+  // Project both NDC positions onto the virtual trackball sphere
+  projectOnSphere(prevNDC.x, prevNDC.y, _arcballV1);
+  projectOnSphere(currNDC.x, currNDC.y, _arcballV2);
+
+  // Rotation axis = cross product of the two sphere vectors
+  _arcballAxis.crossVectors(_arcballV1, _arcballV2);
+
+  // Skip if rotation is too small (sub-pixel movement)
+  if (_arcballAxis.length() < 0.001) return matrix;
+
+  // Angle = arccos of the dot product (clamped for safety)
+  const dot = Math.max(-1, Math.min(1, _arcballV1.dot(_arcballV2)));
+  const angle = Math.acos(dot);
+  _arcballAxis.normalize();
+
+  // Apply sensitivity multiplier for responsive feel, negate for correct direction
+  const rotQuat = new THREE.Quaternion().setFromAxisAngle(_arcballAxis, -angle * sensitivity);
+  quaternion.premultiply(rotQuat);
+  quaternion.normalize();
+
   return composeMatrix(position, quaternion, scale);
 }
 
