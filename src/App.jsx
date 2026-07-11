@@ -1,43 +1,71 @@
+import { useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from "@react-three/drei";
+import {
+  OrbitControls,
+  Grid,
+  GizmoHelper,
+  GizmoViewport,
+} from "@react-three/drei";
+
 import EngineViewer from "./components/EngineViewer";
+import ExplodeControls from "./components/ExplodeControls";
 
 function App() {
-  return (
-    <Canvas
-      style={{width: "100vw", height: "100vh"}}
-      camera={{
-          position: [1,1,1],
-          fov: 45,
-      }}
-    >
-      {/* Light */}
-      <ambientLight intensity={1.5} />
-      <directionalLight position={[5, 5, 5]} intensity={3} />
+  // Explosion state
+  const [explodeAmount, setExplodeAmount] = useState(0);
 
-      {/* Ground Grid */}
-      <Grid
-        infiniteGrid
-        cellSize={1.5}
-        sectionSize={5}
-        fadeDistance={30}
+  return (
+    <>
+      {/* UI Controls */}
+      <ExplodeControls
+        explodeAmount={explodeAmount}
+        setExplodeAmount={setExplodeAmount}
       />
 
-      {/* Cube */}
-      <mesh>
-        <EngineViewer/>
-        {/* <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="orange" /> */}
-      </mesh>
+      {/* 3D Canvas */}
+      <Canvas
+        style={{
+          width: "100vw",
+          height: "100vh",
+        }}
+        camera={{
+          position: [1, 1, 1],
+          fov: 45,
+        }}
+        shadows
+      >
+        {/* Lights */}
+        <ambientLight intensity={1.5} />
 
-      {/* Mouse Controls */}
-      <OrbitControls />
+        <directionalLight
+          position={[5, 5, 5]}
+          intensity={3}
+          castShadow
+        />
 
-      {/* Axis Helper */}
-      <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
-        <GizmoViewport />
-      </GizmoHelper>
-    </Canvas>
+        {/* Ground */}
+        <Grid
+          infiniteGrid
+          cellSize={1.5}
+          sectionSize={5}
+          fadeDistance={30}
+        />
+
+        {/* Engine */}
+        <EngineViewer explodeAmount={explodeAmount} />
+
+        {/* Camera Controls */}
+        <OrbitControls />
+
+        {/* Axis Helper */}
+        <GizmoHelper
+          alignment="bottom-right"
+          margin={[80, 80]}
+        >
+          <GizmoViewport />
+        </GizmoHelper>
+      </Canvas>
+    </>
   );
 }
 
