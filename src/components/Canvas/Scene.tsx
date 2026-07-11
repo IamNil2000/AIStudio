@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Grid } from '@react-three/drei';
+import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import * as THREE from 'three';
 import { usePartStore } from '@/store/usePartStore';
 import { Model } from './Model';
@@ -71,6 +71,17 @@ export function Scene() {
               infiniteGrid
               position={[0, -0.01, 0]}
             />
+
+            {/* Axis orientation indicator (bottom-right) */}
+            <GizmoHelper
+              alignment="bottom-right"
+              margin={[80, 80]}
+            >
+              <GizmoViewport
+                axisColors={['#ef4444', '#22c55e', '#3b82f6']}
+                labelColor="white"
+              />
+            </GizmoHelper>
 
             {/* Renders each part individually with clickable selection */}
             <Model controlsRef={controlsRef} />
