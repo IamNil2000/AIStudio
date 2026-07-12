@@ -44,6 +44,32 @@ function computeModelCenter(parts: Record<string, Part>): { x: number; y: number
   return { x: center.x, y: center.y, z: center.z };
 }
 
+/**
+ * Compute the model's radius — the max distance from center to any part.
+ * This is used to normalize explode distance so it scales with model size.
+ */
+function computeModelRadius(parts: Record<string, Part>, center: { x: number; y: number; z: number }): number {
+  const cx = center.x, cy = center.y, cz = center.z;
+  let maxDist = 0;
+  const pos = new THREE.Vector3();
+  for (const part of Object.values(parts)) {
+    part.originalMatrix.decompose(pos, new THREE.Quaternion(), new THREE.Vector3());
+    const dx = pos.x - cx, dy = pos.y - cy, dz = pos.z - cz;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (d > maxDist) maxDist = d;
+  }
+  // Ensure a minimum scale so tiny models still explode visibly
+  return Math.max(maxDist, 0.5);
+}
+
+// Pre-allocated temporaries for applyExplode hot loop (avoids GC)
+const _explodePos = new THREE.Vector3();
+const _explodeQuat = new THREE.Quaternion();
+const _explodeScl = new THREE.Vector3();
+const _explodeDir = new THREE.Vector3();
+const _explodeMat = new THREE.Matrix4();
+const _explodeCenter = new THREE.Vector3();
+
 export const usePartStore = create<AppState>((set, get) => ({
   // Initial state
   parts: {},
@@ -59,11 +85,18 @@ export const usePartStore = create<AppState>((set, get) => ({
   showSidebar: true,
   explodeTarget: 0,
   modelCenter: null,
+  modelScale: 1,
+  resetVersion: 0,
   measureMode: false,
   pendingMeasurePoint: null,
   measurements: [],
   sceneRef: null,
   modelScene: null,
+
+  // Section View
+  sectionViewEnabled: false,
+  sectionViewPosition: 0,
+  sectionViewAxis: 'y' as 'x' | 'y' | 'z',
 
   // Animation
   animations: [] as THREE.AnimationClip[],
@@ -75,6 +108,18 @@ export const usePartStore = create<AppState>((set, get) => ({
   setModelScene: (scene: THREE.Group | null) => set({ modelScene: scene }),
 
   setAnimations: (clips: THREE.AnimationClip[]) => set({ animations: clips }),
+
+  // Section View actions
+  setSectionViewEnabled: (enabled: boolean) => set({ sectionViewEnabled: enabled }),
+
+  toggleSectionView: () => {
+    const state = get();
+    set({ sectionViewEnabled: !state.sectionViewEnabled });
+  },
+
+  setSectionViewPosition: (pos: number) => set({ sectionViewPosition: pos }),
+
+  setSectionViewAxis: (axis: 'x' | 'y' | 'z') => set({ sectionViewAxis: axis }),
 
   toggleAnimation: () => {
     const state = get();
@@ -94,6 +139,9 @@ export const usePartStore = create<AppState>((set, get) => ({
       partsMap[part.id] = part;
     }
     const entry: HistoryEntry = { parts: serializeParts(partsMap) };
+    // Compute model center and radius for proportional explode
+    const center = computeModelCenter(partsMap);
+    const radius = computeModelRadius(partsMap, center);
     set({
       parts: partsMap,
       selectedIds: [],
@@ -107,7 +155,11 @@ export const usePartStore = create<AppState>((set, get) => ({
       pendingMeasurePoint: null,
       measureMode: false,
       explodeTarget: 0,
-      modelCenter: null,
+      modelCenter: center,
+      modelScale: radius,
+      sectionViewEnabled: false,
+      sectionViewPosition: 0,
+      sectionViewAxis: 'y',
     });
   },
 
@@ -157,45 +209,51 @@ export const usePartStore = create<AppState>((set, get) => ({
 
   toggleExplode: () => {
     const state = get();
+    // Toggle between 0 and a moderate value (10 out of 15)
     const newTarget = state.explodeTarget > 0.5 ? 0 : 10;
     set({ explodeTarget: newTarget });
   },
 
   applyExplode: (spread: number) => {
     const state = get();
-    const parts = { ...state.parts };
+    // IMPORTANT: Do NOT spread parts — same reference keeps UI components
+    // (Sidebar, PartTree, etc.) from re-rendering during explode animation.
+    // PartMeshes read latest matrix values via useFrame + getState().
+    const parts = state.parts;
     const ids = Object.keys(parts);
     if (ids.length === 0) return;
 
-    // Compute and cache model center on first call
-    let centerResult = state.modelCenter;
-    if (!centerResult) {
-      centerResult = computeModelCenter(parts);
-      set({ modelCenter: centerResult });
-    }
-    const cx = centerResult.x;
-    const cy = centerResult.y;
-    const cz = centerResult.z;
+    // Use cached center and scale (computed at load time)
+    const centerResult = state.modelCenter;
+    const cx = centerResult!.x;
+    const cy = centerResult!.y;
+    const cz = centerResult!.z;
 
-    const center = new THREE.Vector3(cx, cy, cz);
+    const modelScale = state.modelScale;
+    // Normalize spread by model size so explode is proportional
+    const normalizedSpread = spread * modelScale * 0.04;
+
+    // Set center from cached values (pre-allocated vector, no GC)
+    _explodeCenter.set(cx, cy, cz);
 
     for (const part of Object.values(parts)) {
-      const pos = new THREE.Vector3();
-      const quat = new THREE.Quaternion();
-      const scale = new THREE.Vector3();
-      part.originalMatrix.decompose(pos, quat, scale);
+      part.originalMatrix.decompose(_explodePos, _explodeQuat, _explodeScl);
 
-      const dir = new THREE.Vector3().copy(pos).sub(center);
-      if (dir.length() < 0.001) {
-        dir.set(0, 1, 0);
+      // Direction from center to part (pre-allocated)
+      _explodeDir.copy(_explodePos).sub(_explodeCenter);
+      if (_explodeDir.length() < 0.001) {
+        _explodeDir.set(0, 1, 0);
       }
-      dir.normalize();
+      _explodeDir.normalize();
 
-      pos.add(dir.multiplyScalar(spread));
-      const newMatrix = new THREE.Matrix4().compose(pos, quat, scale);
-      part.currentMatrix.copy(newMatrix);
+      _explodePos.add(_explodeDir.multiplyScalar(normalizedSpread));
+
+      // Compose and store (reuse pre-allocated matrix)
+      _explodeMat.compose(_explodePos, _explodeQuat, _explodeScl);
+      part.currentMatrix.copy(_explodeMat);
       part.visible = true;
     }
+    // Same parts reference — Zustand's Object.is check prevents UI re-renders
     set({ parts });
   },
 
@@ -355,11 +413,19 @@ export const usePartStore = create<AppState>((set, get) => ({
   resetAll: () => {
     const state = get();
     const parts = { ...state.parts };
+    // Make all parts visible (don't reset matrices — ExplodeAnimator
+    // will smoothly lerp parts back to original positions via applyExplode)
     for (const part of Object.values(parts)) {
-      part.currentMatrix.copy(part.originalMatrix);
       part.visible = true;
     }
-    set({ parts, selectedIds: [] });
+    set({
+      parts,
+      selectedIds: [],
+      // Setting explodeTarget to 0 triggers the ExplodeAnimator to lerp
+      // from the current spread back to 0, giving a smooth transition.
+      // We do NOT increment resetVersion so the animator keeps its refs.
+      explodeTarget: 0,
+    });
   },
 
   hideSelected: () => {
@@ -388,5 +454,38 @@ export const usePartStore = create<AppState>((set, get) => ({
     delete parts[id];
     const selectedIds = state.selectedIds.filter((sid) => sid !== id);
     set({ parts, selectedIds });
+  },
+
+  // --- Material editor ---
+
+  updatePartMaterial: (id: string, updates: { color?: string; roughness?: number; metalness?: number }) => {
+    const state = get();
+    const part = state.parts[id];
+    if (!part) return;
+
+    const obj = part.object;
+    if (!(obj instanceof THREE.Mesh || obj instanceof THREE.SkinnedMesh || obj instanceof THREE.InstancedMesh)) return;
+
+    const material = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+    if (!material) return;
+
+    if (updates.color !== undefined) {
+      material.color.set(updates.color);
+      // Update metadata for PartDetails display
+      if (part.metadata) {
+        part.metadata.materialColor = updates.color;
+      }
+    }
+    if (updates.roughness !== undefined && 'roughness' in material) {
+      (material as THREE.MeshStandardMaterial).roughness = updates.roughness;
+    }
+    if (updates.metalness !== undefined && 'metalness' in material) {
+      (material as THREE.MeshStandardMaterial).metalness = updates.metalness;
+    }
+
+    material.needsUpdate = true;
+
+    // Trigger re-render
+    set({ parts: { ...state.parts } });
   },
 }));

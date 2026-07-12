@@ -226,6 +226,8 @@ export function rotateFree(
   }
 
   // --- Vertical rotation: tilt around camera's right axis ---
+  // When dragging up (negative dy), angle is negative → top tilts away from camera.
+  // When dragging down (positive dy), angle is positive → top tilts toward camera.
   if (Math.abs(deltaY) > 0.5) {
     const right = new THREE.Vector3();
     const forward = new THREE.Vector3();
@@ -234,7 +236,7 @@ export function rotateFree(
 
     const qX = new THREE.Quaternion().setFromAxisAngle(
       right,
-      -deltaY * sensitivity
+      deltaY * sensitivity
     );
     quaternion.premultiply(qX);
   }
@@ -299,10 +301,10 @@ export function rotateArcball(
   const angle = Math.acos(dot);
   _arcballAxis.normalize();
 
-  // Apply sensitivity multiplier, negate angle for correct cursor direction
+  // Apply sensitivity multiplier
   // Use premultiply (world space) so screen directions map to world axes:
   // vertical drag → world X tilt, horizontal drag → world Y spin
-  const rotQuat = new THREE.Quaternion().setFromAxisAngle(_arcballAxis, -angle * sensitivity);
+  const rotQuat = new THREE.Quaternion().setFromAxisAngle(_arcballAxis, angle * sensitivity);
   quaternion.premultiply(rotQuat);
   quaternion.normalize();
 

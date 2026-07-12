@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef, useLayoutEffect } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { usePartStore } from '@/store/usePartStore';
@@ -15,10 +15,11 @@ interface ModelProps {
 export function Model({ controlsRef }: ModelProps) {
   const parts = usePartStore((s) => s.parts);
   const modelLoaded = usePartStore((s) => s.modelLoaded);
+  const modelScene = usePartStore((s) => s.modelScene);
   const animationPlaying = usePartStore((s) => s.animationPlaying);
   const hasAnimations = usePartStore((s) => s.animations.length > 0);
   const groupRef = useRef<THREE.Group>(null);
-  const { camera: r3fCamera } = useThree();
+  const { camera: r3fCamera, size: viewportSize } = useThree();
 
   // Collect unique object references for rendering
   const renderedParts = useMemo(() => {
@@ -30,91 +31,61 @@ export function Model({ controlsRef }: ModelProps) {
   }, [parts]);
 
   // Auto-fit camera when model loads.
-  // Uses useLayoutEffect so this runs before the first browser paint,
-  // preventing a flash of the default camera position.
-  useLayoutEffect(() => {
-    if (!modelLoaded || Object.keys(parts).length === 0 || !groupRef.current) return;
+  // Uses useEffect (not useLayoutEffect) so Three.js has time to initialize
+  // scene matrices and the viewport size before we compute positions.
+  useEffect(() => {
+    if (!modelLoaded || !modelScene || Object.keys(parts).length === 0) return;
 
-    const box = new THREE.Box3();
-    const tempVec = new THREE.Vector3();
+    // Use the model scene for the most reliable bounding box.
+    // Box3.setFromObject() traverses the entire scene graph and correctly
+    // accounts for all transforms — much more robust than manual part iteration.
+    const scene = modelScene;
 
-    for (const part of Object.values(parts)) {
-      const obj = part.object;
-      if (!obj) continue;
+    // Update world matrices so bounding box is correct
+    scene.updateWorldMatrix(true, true);
 
-      if (obj instanceof THREE.Mesh && obj.geometry) {
-        obj.geometry.computeBoundingBox();
-        const gBox = obj.geometry.boundingBox;
-        if (gBox) {
-          for (let cx = 0; cx <= 1; cx++) {
-            for (let cy = 0; cy <= 1; cy++) {
-              for (let cz = 0; cz <= 1; cz++) {
-                tempVec.set(
-                  cx ? gBox.max.x : gBox.min.x,
-                  cy ? gBox.max.y : gBox.min.y,
-                  cz ? gBox.max.z : gBox.min.z
-                );
-                tempVec.applyMatrix4(part.currentMatrix);
-                box.expandByPoint(tempVec);
-              }
-            }
-          }
-        }
-      } else if (obj instanceof THREE.Group) {
-        obj.traverse((child) => {
-          if (child instanceof THREE.Mesh && child.geometry) {
-            child.geometry.computeBoundingBox();
-            const gBox = child.geometry.boundingBox;
-            if (gBox) {
-              for (let cx = 0; cx <= 1; cx++) {
-                for (let cy = 0; cy <= 1; cy++) {
-                  for (let cz = 0; cz <= 1; cz++) {
-                    tempVec.set(
-                      cx ? gBox.max.x : gBox.min.x,
-                      cy ? gBox.max.y : gBox.min.y,
-                      cz ? gBox.max.z : gBox.min.z
-                    );
-                    tempVec.applyMatrix4(part.currentMatrix);
-                    box.expandByPoint(tempVec);
-                  }
-                }
-              }
-            }
-          }
-        });
-      }
-    }
-
-    const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-
-    // Guard against degenerate bounding boxes
-    if (maxDim < 0.001) {
-      // Fallback: use a sensible default camera position
-      if (r3fCamera instanceof THREE.PerspectiveCamera) {
-        r3fCamera.position.set(5, 5, 10);
-        r3fCamera.lookAt(0, 0, 0);
+    const box = new THREE.Box3().setFromObject(scene);
+    if (box.isEmpty() || !(r3fCamera instanceof THREE.PerspectiveCamera)) {
+      // Fallback
+      r3fCamera.position.set(5, 5, 10);
+      r3fCamera.lookAt(0, 0, 0);
+      if (controlsRef.current?.target) {
+        controlsRef.current.target.set(0, 0, 0);
       }
       return;
     }
 
-    if (r3fCamera instanceof THREE.PerspectiveCamera) {
-      const distance = Math.max(maxDim * 2.5, 0.5);
-      r3fCamera.position.set(center.x, center.y + maxDim * 0.5, center.z + distance);
-      r3fCamera.lookAt(center);
+    const center = box.getCenter(new THREE.Vector3());
 
-      // Sync the OrbitControls target so the controls orbit around the model center.
-      // IMPORTANT: Do NOT call controls.update() here — that would re-read OrbitControls'
-      // stale internal spherical coordinates and reposition the camera, undoing the auto-fit.
-      // Instead, just update the target. On the next frame, OrbitControls.update() will
-      // read the current camera position and compute fresh spherical coordinates from it.
-      if (controlsRef.current?.target) {
-        controlsRef.current.target.copy(center);
-      }
+    // Compute distance using the bounding sphere and FOV.
+    // This is the standard Three.js formula for fitting an object in the viewport.
+    const sphere = new THREE.Sphere();
+    box.getBoundingSphere(sphere);
+    const radius = Math.max(sphere.radius, 0.001);
+
+    const vFov = (r3fCamera.fov * Math.PI) / 180;
+    const aspect = viewportSize.width / viewportSize.height;
+
+    // Distance to fit vertically: radius / sin(vFov/2)
+    // Distance to fit horizontally: radius / sin(atan(tan(vFov/2) * aspect))
+    const distV = radius / Math.sin(vFov / 2);
+    const distH = radius / Math.sin(Math.atan(Math.tan(vFov / 2) * aspect));
+    // Use the larger distance to ensure the sphere fits BOTH dimensions
+    const distance = Math.max(distV, distH) * 1.3; // 30% padding
+
+    // Position camera at a 3/4 perspective: slightly above center, back by distance
+    const yOffset = Math.max(radius * 0.4, 0.5);
+    r3fCamera.position.set(center.x, center.y + yOffset, center.z + distance);
+    r3fCamera.lookAt(center);
+
+    // Sync the OrbitControls target so the controls orbit around the model center.
+    // Do NOT call controls.update() here — OrbitControls would re-read its stale
+    // internal spherical coordinates and reposition the camera, undoing the auto-fit.
+    if (controlsRef.current?.target) {
+      controlsRef.current.target.copy(center);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelLoaded]);
+  }, [modelLoaded, modelScene]);
 
   if (!modelLoaded || Object.keys(parts).length === 0) return null;
 

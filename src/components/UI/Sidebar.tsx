@@ -1,9 +1,11 @@
 'use client';
 
 import React from 'react';
-import { X, Upload, FileText, Box, Ruler, Trash2 } from 'lucide-react';
+import { X, Upload, FileText, Box, Ruler, Trash2, Search } from 'lucide-react';
 import { usePartStore } from '@/store/usePartStore';
 import { PartTree } from './PartTree';
+import { PartDetails } from './PartDetails';
+import { MaterialEditor } from './MaterialEditor';
 
 export function Sidebar() {
   const showSidebar = usePartStore((s) => s.showSidebar);
@@ -18,6 +20,8 @@ export function Sidebar() {
   const measureMode = usePartStore((s) => s.measureMode);
   const pendingMeasurePoint = usePartStore((s) => s.pendingMeasurePoint);
   const setMeasureMode = usePartStore((s) => s.setMeasureMode);
+
+  const [searchQuery, setSearchQuery] = React.useState('');
 
   if (!showSidebar) return null;
 
@@ -39,6 +43,11 @@ export function Sidebar() {
           <X size={14} className="text-[#6b6b70]" />
         </button>
       </div>
+
+      {/* Search input */}
+      {modelLoaded && (
+        <PartSearch searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
+      )}
 
       {/* Model info */}
       {modelLoaded && (
@@ -63,7 +72,13 @@ export function Sidebar() {
         {modelLoaded ? (
           <>
             {/* Part tree section */}
-            <PartTree />
+            <PartTree searchQuery={searchQuery} />
+
+            {/* Part details panel (shown when a single part is selected) */}
+            <PartDetails />
+
+            {/* Material editor (shown when a single mesh part is selected) */}
+            <MaterialEditor />
 
             {/* Divider */}
             {measurements.length > 0 && (
@@ -159,5 +174,58 @@ export function Sidebar() {
         </div>
       )}
     </aside>
+  );
+}
+
+function PartSearch({
+  searchQuery,
+  setSearchQuery,
+}: {
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  // Focus on Ctrl+F or Cmd+F
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  return (
+    <div className="px-3 py-2 border-b border-[#e2e2e6]">
+      <div className="relative">
+        <Search
+          size={13}
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6b6b70] pointer-events-none"
+        />
+        <input
+          ref={inputRef}
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search parts…"
+          className="w-full pl-7 pr-7 py-1.5 text-xs bg-[#f7f7f8] border border-[#e2e2e6] rounded-lg
+            placeholder:text-[#a1a1a7] text-[#1a1a1c]
+            focus:outline-none focus:ring-1 focus:ring-[#3b82f6] focus:border-[#3b82f6]
+            transition-all"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-[#e2e2e6] transition-colors"
+            title="Clear search"
+          >
+            <X size={12} className="text-[#6b6b70]" />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

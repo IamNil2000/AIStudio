@@ -1,5 +1,36 @@
 import * as THREE from 'three';
 
+export type PartNodeType = 'mesh' | 'skinned-mesh' | 'instanced-mesh' | 'group' | 'bone' | 'line' | 'points' | 'sprite' | 'unknown';
+
+export interface PartMetadata {
+  /** Type of the 3D node */
+  nodeType: PartNodeType;
+  /** Name of the material applied to this part */
+  materialName?: string;
+  /** Color of the material (hex string) */
+  materialColor?: string;
+  /** Vertex count */
+  vertexCount?: number;
+  /** Face/triangle count */
+  faceCount?: number;
+  /** Bounding box dimensions */
+  boundingBox?: {
+    width: number;
+    height: number;
+    depth: number;
+  };
+  /** Center position of bounding box */
+  boundingBoxCenter?: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  /** Node path from root (e.g. "Root/Group1/SubGroup/Mesh1") */
+  nodePath?: string;
+  /** Custom data preserved from the original model */
+  userData?: Record<string, unknown>;
+}
+
 export interface Part {
   id: string;
   name: string;
@@ -7,7 +38,38 @@ export interface Part {
   currentMatrix: THREE.Matrix4;
   visible: boolean;
   object: THREE.Object3D;
+  /** IDs of child parts */
   children?: string[];
+  /** ID of the parent part */
+  parentId?: string;
+  /** Rich metadata about the part */
+  metadata?: PartMetadata;
+  /** CAD-specific engineering information */
+  cadInfo?: CadPartInfo;
+}
+
+/**
+ * CAD-specific engineering information for a part.
+ * These fields are populated from the model's userData (custom properties)
+ * or can be manually assigned by the user.
+ */
+export interface CadPartInfo {
+  /** Material name (e.g. "Steel", "Aluminum", "Cast Iron") */
+  material?: string;
+  /** Mass in kg */
+  mass?: string;
+  /** Engineering purpose/description of the part */
+  purpose?: string;
+  /** Kinematic constraints (e.g. "Revolute", "Prismatic", "Fixed") */
+  constraints?: string[];
+  /** Names of connected/adjacent parts */
+  connectedTo?: string[];
+  /** Part number or identifier */
+  partNumber?: string;
+  /** Manufacturing method (e.g. "Casting", "Machined", "3D Printed") */
+  manufacturingMethod?: string;
+  /** Additional properties for extensibility */
+  properties?: Record<string, string>;
 }
 
 export interface HistoryEntry {
@@ -62,12 +124,19 @@ export interface AppState {
   // Explode
   explodeTarget: number;
   modelCenter: { x: number; y: number; z: number } | null;
+  modelScale: number;
+  resetVersion: number;
   
   // Measurement
   measureMode: boolean;
   pendingMeasurePoint: MeasurePoint | null;
   measurements: Measurement[];
   
+  // Section View
+  sectionViewEnabled: boolean;
+  sectionViewPosition: number;
+  sectionViewAxis: 'x' | 'y' | 'z';
+
   // Scene refs
   sceneRef: THREE.Scene | null;
   
@@ -109,4 +178,9 @@ export interface AppState {
   hideSelected: () => void;
   soloPart: (id: string) => void;
   removePart: (id: string) => void;
+  updatePartMaterial: (id: string, updates: { color?: string; roughness?: number; metalness?: number }) => void;
+  setSectionViewEnabled: (enabled: boolean) => void;
+  toggleSectionView: () => void;
+  setSectionViewPosition: (pos: number) => void;
+  setSectionViewAxis: (axis: 'x' | 'y' | 'z') => void;
 }

@@ -72,7 +72,8 @@ export function ShortcutManual() {
             <Shortcut keys={['?']} desc="Toggle this manual" />
             <Shortcut keys={['E']} desc="Auto-explode animation" />
             <Shortcut keys={['T']} desc="Cycle transform space" />
-            <Shortcut keys={['1 / 2 / 3']} desc="Front / Top / Right views" />
+            <Shortcut keys={['1-7']} desc="Camera presets (Front, Top, Right, Persp, Back, Left, Bottom)" />
+            <Shortcut keys={['C']} desc="Toggle section view" />
             <Shortcut keys={['Ctrl+Z']} desc="Undo" />
             <Shortcut keys={['Space']} desc="Temporary orbit (held)" />
           </Section>

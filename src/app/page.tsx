@@ -10,6 +10,7 @@ import { DropZone } from '@/components/UI/DropZone';
 import { LoadingOverlay } from '@/components/UI/LoadingOverlay';
 import { CanvasErrorBoundary } from '@/components/UI/CanvasErrorBoundary';
 import { ShortcutManual } from '@/components/UI/ShortcutManual';
+import { PartInfoPanel } from '@/components/UI/PartInfoPanel';
 import { loadModelFromFile } from '@/lib/loaders';
 
 export default function Home() {
@@ -120,7 +121,7 @@ export default function Home() {
 
       {/* Main content area */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
+        {/* Left Sidebar */}
         <Sidebar />
 
         {/* Canvas area */}
@@ -136,6 +137,9 @@ export default function Home() {
           {/* Drop zone overlay (shown when no model is loaded) */}
           {!modelLoaded && <DropZone />}
         </div>
+
+        {/* Right-side CAD information panel (shown when a part is selected) */}
+        <PartInfoPanel />
       </div>
 
       {/* Bottom toolbar */}

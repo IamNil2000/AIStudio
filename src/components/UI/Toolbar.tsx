@@ -12,6 +12,9 @@ import {
   Shrink,
   Play,
   Square,
+  LayoutGrid,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { usePartStore } from '@/store/usePartStore';
 
@@ -32,6 +35,10 @@ export function Toolbar() {
   const animationPlaying = usePartStore((s) => s.animationPlaying);
   const toggleAnimation = usePartStore((s) => s.toggleAnimation);
   const hasAnimations = usePartStore((s) => s.animations.length > 0);
+  const sectionViewEnabled = usePartStore((s) => s.sectionViewEnabled);
+  const toggleSectionView = usePartStore((s) => s.toggleSectionView);
+  const sectionViewAxis = usePartStore((s) => s.sectionViewAxis);
+  const setSectionViewAxis = usePartStore((s) => s.setSectionViewAxis);
 
   const spaceLabels: Record<string, string> = {
     local: 'Local',
@@ -129,6 +136,60 @@ export function Toolbar() {
               <Ruler size={12} />
               {measureMode ? 'Measuring...' : `Measure${measurements.length > 0 ? ` (${measurements.length})` : ''}`}
             </button>
+
+            {/* Section view toggle */}
+            <button
+              onClick={toggleSectionView}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded text-xs transition-colors border ${
+                sectionViewEnabled
+                  ? 'bg-purple-50 text-purple-700 border-purple-200'
+                  : 'text-[#6b6b70] hover:bg-[#f0f0f2] border-[#e2e2e6]'
+              }`}
+              title="Toggle section view (C)"
+            >
+              {sectionViewEnabled ? <EyeOff size={12} /> : <Eye size={12} />}
+              Section
+            </button>
+
+            {/* Section view axis selector (only when enabled) */}
+            {sectionViewEnabled && (
+              <div className="flex items-center gap-0.5 border border-[#e2e2e6] rounded overflow-hidden">
+                {(['x', 'y', 'z'] as const).map((axis) => (
+                  <button
+                    key={axis}
+                    onClick={() => setSectionViewAxis(axis)}
+                    className={`px-2 py-1.5 text-xs transition-colors ${
+                      sectionViewAxis === axis
+                        ? 'bg-purple-100 text-purple-700 font-medium'
+                        : 'text-[#6b6b70] hover:bg-[#f0f0f2]'
+                    }`}
+                  >
+                    {axis.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Camera preset buttons */}
+            <div className="flex items-center gap-0.5 border border-[#e2e2e6] rounded overflow-hidden">
+              {(['Front', 'Top', 'Right', 'Persp'] as const).map((view) => (
+                <button
+                  key={view}
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent('set-camera-view', {
+                        detail: view.toLowerCase() === 'persp' ? 'perspective' : view.toLowerCase(),
+                      })
+                    )
+                  }
+                  className="px-2 py-1.5 text-xs text-[#6b6b70] hover:bg-[#f0f0f2] transition-colors"
+                  title={`${view} view (${view === 'Front' ? '1' : view === 'Top' ? '2' : view === 'Right' ? '3' : '4'})`}
+                >
+                  <LayoutGrid size={12} className="inline mr-1" />
+                  {view}
+                </button>
+              ))}
+            </div>
 
             <button
               onClick={resetAll}

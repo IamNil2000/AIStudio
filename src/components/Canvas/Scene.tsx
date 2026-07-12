@@ -1,8 +1,11 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Grid, GizmoHelper, GizmoViewport } from '@react-three/drei';
+import {
+  OrbitControls,
+  Grid,
+} from '@react-three/drei';
 import * as THREE from 'three';
 import { usePartStore } from '@/store/usePartStore';
 import { Model } from './Model';
@@ -10,6 +13,8 @@ import { AnimationPlayer } from './AnimationPlayer';
 import { PartControls } from './Controls';
 import { MeasurementLines } from './MeasurementLines';
 import { ExplodeAnimator } from './ExplodeAnimator';
+import { SectionView } from './SectionView';
+import { DetailedPartModal } from '@/components/UI/DetailedPartModal';
 import type { ControlsHandle } from '@/types';
 
 /**
@@ -33,56 +38,148 @@ function ControlsRefBridge({
   return null;
 }
 
+/**
+ * Listens for camera preset events dispatched from keyboard shortcuts.
+ */
+function CameraPresetListener({
+  controlsRef,
+}: {
+  controlsRef: React.MutableRefObject<ControlsHandle | null>;
+}) {
+  const { camera } = useThree();
+
+  const setCameraView = useCallback(
+    (view: 'front' | 'back' | 'top' | 'bottom' | 'right' | 'left' | 'perspective') => {
+      if (!(camera instanceof THREE.PerspectiveCamera)) return;
+
+      const distance = camera.position.length();
+      const target = controlsRef.current?.target || new THREE.Vector3(0, 0, 0);
+
+      const views: Record<string, THREE.Vector3> = {
+        front: new THREE.Vector3(0, 0, distance),
+        back: new THREE.Vector3(0, 0, -distance),
+        top: new THREE.Vector3(0, distance, 0),
+        bottom: new THREE.Vector3(0, -distance, 0),
+        right: new THREE.Vector3(distance, 0, 0),
+        left: new THREE.Vector3(-distance, 0, 0),
+        perspective: new THREE.Vector3(distance * 0.5, distance * 0.5, distance),
+      };
+
+      const pos = views[view] || views.perspective;
+      camera.position.copy(pos);
+      camera.lookAt(target);
+
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(target);
+        controlsRef.current.update();
+      }
+    },
+    [camera, controlsRef]
+  );
+
+  // Listen for camera preset events
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (typeof detail === 'string') {
+        setCameraView(detail as 'front' | 'back' | 'top' | 'bottom' | 'right' | 'left' | 'perspective');
+      }
+    };
+    window.addEventListener('set-camera-view', handler);
+    return () => window.removeEventListener('set-camera-view', handler);
+  }, [setCameraView]);
+
+  return null;
+}
+
 export function Scene() {
   const modelLoaded = usePartStore((s) => s.modelLoaded);
+  const explodeTarget = usePartStore((s) => s.explodeTarget);
+  const selectedIds = usePartStore((s) => s.selectedIds);
+  const isExploding = explodeTarget > 0.5;
   const controlsRef = useRef<ControlsHandle>(null!);
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full relative">
+      {/* Part detail modal — top-right corner of the canvas viewport */}
+      {modelLoaded && selectedIds.length === 1 && (
+        <DetailedPartModal partId={selectedIds[0]} />
+      )}
+
       <Canvas
+        dpr={[0.4, 1.5]}
         camera={{
           position: [5, 5, 10],
           fov: 45,
           near: 0.1,
-          far: 1000,
+          far: 8000,
         }}
-        onCreated={({ scene }) => {
-          scene.background = new THREE.Color('#f0f0f2');
+        onCreated={({ scene, gl }) => {
+          scene.background = new THREE.Color('#e8e8ec');
+
+          // Simple tone mapping
+          gl.toneMapping = THREE.LinearToneMapping;
+          gl.toneMappingExposure = 1.0;
+
+          // Shadows disabled for performance during animation
+          gl.shadowMap.enabled = false;
+        }}
+        onPointerMissed={() => {
+          // Clicking on empty canvas space deselects any selected part
+          usePartStore.getState().deselectAll();
         }}
         style={{ width: '100%', height: '100%' }}
+        gl={{
+          antialias: false,
+          alpha: false,
+          outputColorSpace: THREE.SRGBColorSpace,
+        }}
       >
-        {/* Lights always present for consistent scene */}
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[10, 15, 10]} intensity={1.2} />
+        {/* Key light (no shadows for performance) */}
+        <directionalLight
+          position={[10, 15, 10]}
+          intensity={1.8}
+        />
 
-        {/* OrbitControls with makeDefault so useThree().controls is populated */}
-        <OrbitControls makeDefault enableDamping dampingFactor={0.15} />
+        {/* Fill light: cool ambient fill from opposite side */}
+        <directionalLight position={[-8, 5, -8]} intensity={0.5} color="#a0c4ff" />
+
+        {/* Hemisphere light */}
+        <hemisphereLight
+          args={['#d4d4ff', '#808080', 0.4]}
+        />
+
+        {/* OrbitControls with smooth damping */}
+        <OrbitControls
+          makeDefault
+          enableDamping
+          dampingFactor={0.1}
+          minPolarAngle={0}
+          maxPolarAngle={Math.PI}
+        />
 
         {/* Sync the controls instance to our ref */}
         <ControlsRefBridge controlsRef={controlsRef} />
 
+        {/* Camera preset event listener */}
+        <CameraPresetListener controlsRef={controlsRef} />
+
         {modelLoaded && (
           <>
-            <Grid
-              cellColor="#d4d4d8"
-              cellSize={1}
-              sectionColor="#c0c0c4"
-              sectionSize={5}
-              fadeDistance={50}
-              infiniteGrid
-              position={[0, -0.01, 0]}
-            />
-
-            {/* Axis orientation indicator (bottom-right) */}
-            <GizmoHelper
-              alignment="bottom-right"
-              margin={[80, 80]}
-            >
-              <GizmoViewport
-                axisColors={['#ef4444', '#22c55e', '#3b82f6']}
-                labelColor="white"
+            {/* Ground grid (hidden during explode for performance) */}
+            {!isExploding && (
+              <Grid
+                cellColor="#d4d4d8"
+                cellSize={2}
+                sectionColor="#c0c0c4"
+                sectionSize={10}
+                args={[30, 30]}
+                fadeDistance={20}
+                position={[0, -0.01, 0]}
               />
-            </GizmoHelper>
+            )}
+
+            {/* Gizmo removed for performance */}
 
             {/* Renders each part individually with clickable selection */}
             <Model controlsRef={controlsRef} />
@@ -98,6 +195,9 @@ export function Scene() {
 
             {/* Smooth explode/reassemble animation */}
             <ExplodeAnimator />
+
+            {/* Section view / clipping plane */}
+            <SectionView />
           </>
         )}
       </Canvas>
